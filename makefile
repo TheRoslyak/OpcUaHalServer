@@ -1,8 +1,8 @@
 # Compiler
-CC = g++
+CC = gcc
 
 # Compilation flags
-CFLAGS = -std=c++17 -Wall -fPIC -DRTAPI
+CFLAGS = -std=c11 -Wall -fPIC -DRTAPI
 
 # Paths to search for header files
 INCLUDES = -Iinclude \
@@ -24,8 +24,8 @@ LIBS =  -llinuxcnchal -lopen62541
 
 
 # Source files
-SRCS = main.cpp \
-       OPCUAServer.cpp 
+SRCS = main.c 
+       #OPCUAServer.cpp 
     
 
 # Output file
