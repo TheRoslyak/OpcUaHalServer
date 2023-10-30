@@ -55,6 +55,12 @@
         "cinttypes": "cpp",
         "typeinfo": "cpp",
         "variant": "cpp",
-        "bitset": "cpp"
+        "bitset": "cpp",
+        "hal_priv.h": "c",
+        "hal.h": "c",
+        "stdio.h": "c",
+        "signal.h": "c",
+        "log_stdout.h": "c",
+        "server_config_default.h": "c"
     }
 }

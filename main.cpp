@@ -1,0 +1,257 @@
+#include <open62541/server.h>
+#include <open62541/server_config_default.h>
+#include <open62541/plugin/log_stdout.h>
+#include "hal.h"
+#include "hal_priv.h"
+#include <rtapi_mutex.h>
+#include <signal.h>
+#include <stdio.h> 
+static int comp_id;
+static UA_Server *server = NULL;
+typedef struct {
+    void *valuePtr;
+    hal_type_t type;
+} DataSourceContext;
+
+UA_Boolean running = true;
+static void stopHandler(int sign) {
+    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "received ctrl-c");
+    running = false;
+}
+
+
+static UA_StatusCode 
+readDataSource(UA_Server *server,
+               const UA_NodeId *sessionId, void *sessionContext,
+               const UA_NodeId *nodeId, void *nodeContext,
+               UA_Boolean sourceTimeStamp, const UA_NumericRange *range,
+               UA_DataValue *dataValue) {
+    
+    // Здесь вы можете установить актуальное значение для вашей переменной
+    // Например:
+    void *valuePtr = nodeContext; // Используем nodeContext как указатель на значение
+    double value = *(hal_float_t *)valuePtr;
+    
+    UA_Variant_setScalarCopy(&dataValue->value, &value, &UA_TYPES[UA_TYPES_DOUBLE]);
+    dataValue->hasValue = true;
+    
+    return UA_STATUSCODE_GOOD;
+}
+
+// Если вы хотите разрешить запись в переменную, также определите функцию записи.
+// В противном случае оставьте NULL в конфигурации источника данных.
+static UA_StatusCode
+writeDataSource(UA_Server *server,
+                const UA_NodeId *sessionId, void *sessionContext,
+                const UA_NodeId *nodeId, void *nodeContext,
+                const UA_NumericRange *range, const UA_DataValue *data) {
+    
+    DataSourceContext *dsContext = (DataSourceContext *)nodeContext;
+    void *valuePtr = dsContext->valuePtr;
+
+    switch (dsContext->type) { // предположим, что у вас есть глобальная переменная или аргумент 'type'
+    case HAL_FLOAT: {
+        hal_float_t *target = (hal_float_t *)valuePtr;
+        *target = *(double *)data->value.data;
+        break;
+    }
+    case HAL_BIT: {
+        hal_bit_t *target = (hal_bit_t *)valuePtr;
+        *target = *(bool *)data->value.data;
+        break;
+    }
+    case HAL_U32: {
+        hal_u32_t *target = (hal_u32_t *)valuePtr;
+        *target = *(unsigned int *)data->value.data;
+        break;
+    }
+    case HAL_S32: {
+        hal_s32_t *target = (hal_s32_t *)valuePtr;
+        *target = *(int *)data->value.data;
+        break;
+    }
+    default:
+        return UA_STATUSCODE_BADUNEXPECTEDERROR;
+    }
+
+    return UA_STATUSCODE_GOOD;
+}
+UA_StatusCode addVariableToOPCUA(const char *variableName, hal_type_t type, void *valuePtr) {
+    printf("Добавление переменной на сервер с именем: %s\n", variableName);
+
+    UA_VariableAttributes attr = UA_VariableAttributes_default;
+    UA_NodeId currentNodeId; // node id for the new variable
+    UA_NodeId dataType; // data type of the new variable
+    UA_Variant valueVariant;
+
+    switch (type) {
+    case HAL_FLOAT: {
+        double value = *(hal_float_t *)valuePtr;
+        printf("Выбран тип данных: HAL_FLOAT\n");
+        UA_Variant_setScalar(&valueVariant, &value, &UA_TYPES[UA_TYPES_DOUBLE]);
+        dataType = UA_TYPES[UA_TYPES_DOUBLE].typeId;
+        break;
+    }
+        case HAL_BIT: {
+        bool value = *(hal_bit_t *)valuePtr;
+        printf("Выбран тип данных: HAL_BIT\n");
+        UA_Variant_setScalar(&valueVariant, &value, &UA_TYPES[UA_TYPES_BOOLEAN]);
+        dataType = UA_TYPES[UA_TYPES_BOOLEAN].typeId;
+        break;
+        }
+    case HAL_U32:
+    {
+        unsigned int value = *(hal_u32_t *)valuePtr;
+        printf("Выбран тип данных: HAL_U32\n");
+        UA_Variant_setScalar(&valueVariant, &value, &UA_TYPES[UA_TYPES_UINT32]);
+        dataType = UA_TYPES[UA_TYPES_UINT32].typeId;
+        break;
+    }
+    case HAL_S32:
+    {   int value = *(hal_s32_t *)valuePtr;
+        printf("Выбран тип данных: HAL_S32\n");
+        UA_Variant_setScalar(&valueVariant, &value, &UA_TYPES[UA_TYPES_INT32]);
+        dataType = UA_TYPES[UA_TYPES_INT32].typeId;
+        break;
+        }
+    default:
+        printf("Неизвестный тип данных!\n");
+        return UA_STATUSCODE_BADUNEXPECTEDERROR;
+    }
+
+DataSourceContext *dsContext = (DataSourceContext *)UA_malloc(sizeof(DataSourceContext));
+dsContext->valuePtr = valuePtr;
+dsContext->type = type;
+UA_DataSource ds;
+ds.read = readDataSource;
+ds.write = writeDataSource;
+    attr.value = valueVariant;
+    attr.dataType = dataType;
+    attr.description = UA_LOCALIZEDTEXT("en-US", (char*)variableName);
+    attr.displayName = UA_LOCALIZEDTEXT("en-US", (char*)variableName);
+
+    UA_NodeId myVariableNodeId = UA_NODEID_STRING(1, (char*)variableName);
+    UA_QualifiedName myVariableName = UA_QUALIFIEDNAME(1, (char*)variableName);
+    UA_NodeId parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
+    UA_NodeId parentReferenceNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES);
+
+UA_StatusCode retVal = UA_Server_addDataSourceVariableNode(server, myVariableNodeId, parentNodeId, 
+    parentReferenceNodeId, myVariableName, UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE), 
+    attr, ds, dsContext, &currentNodeId);
+    if (retVal == UA_STATUSCODE_GOOD) {
+        printf("Переменная %s успешно добавлена на сервер.\n", variableName);
+    } else {
+        printf("Ошибка при добавлении переменной %s на сервер. Код ошибки: %d\n", variableName, retVal);
+    }
+
+    return retVal;
+}
+
+UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t type, void *valuePtr) {
+    printf("Добавление переменной с источником данных на сервер: %s\n", variableName);
+    
+    UA_VariableAttributes attr = UA_VariableAttributes_default;
+    attr.description = UA_LOCALIZEDTEXT("en-US", (char*)variableName);
+    attr.displayName = UA_LOCALIZEDTEXT("en-US", (char*)variableName);
+    
+    UA_NodeId myVariableNodeId = UA_NODEID_STRING(1, (char*)variableName);
+    UA_QualifiedName myVariableName = UA_QUALIFIEDNAME(1, (char*)variableName);
+    UA_NodeId parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
+    UA_NodeId parentReferenceNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES);
+    
+    UA_DataSource ds;
+    ds.read = readDataSource;
+    ds.write = writeDataSource;// или ds.write = writeDataSource; если вы хотите разрешить запись
+    
+    UA_StatusCode retVal = UA_Server_addDataSourceVariableNode(server, myVariableNodeId, parentNodeId,
+                                                               parentReferenceNodeId, myVariableName,
+                                                               UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE), attr,
+                                                               ds, valuePtr, NULL);
+    
+    if (retVal == UA_STATUSCODE_GOOD) {
+        printf("Переменная %s успешно добавлена на сервер.\n", variableName);
+    } else {
+        printf("Ошибка при добавлении переменной %s на сервер. Код ошибки: %d\n", variableName, retVal);
+    }
+    
+    return retVal;
+}
+void processPin(hal_pin_t *pin) {
+    void *valuePtr = &(pin->dummysig);
+    const char *name = (pin->name); 
+    hal_type_t type = pin->type; 
+    addVariableWithDataSource(name, type, valuePtr);
+}
+
+void processSig(hal_sig_t *sig) {
+    void *data_ptr = SHMPTR(sig->data_ptr);
+    const char *name = sig->name;
+    hal_type_t type = sig->type;
+    addVariableWithDataSource(name, type, data_ptr);
+
+}
+void processParam(hal_param_t *param) {
+    void *data_ptr = SHMPTR(param->data_ptr);
+    const char *name = param->name;
+    hal_type_t type = param->type;
+    addVariableWithDataSource(name, type, data_ptr);
+}
+
+UA_StatusCode initialize_server() {
+
+
+    comp_id = hal_init("opcuaserver");
+    if (comp_id < 0) return -1;
+    
+    server = UA_Server_new();
+    if (!server) {
+        rtapi_print_msg(RTAPI_MSG_ERR, "OPCUA: Failed to create new server instance.");
+        return UA_STATUSCODE_BADUNEXPECTEDERROR;
+    }
+rtapi_mutex_get(&(hal_data->mutex));
+    // Add a sample variable
+
+hal_pin_t *currentPin;
+    for (hal_pin_t *currentPin = SHMPTR(hal_data->pin_list_ptr); currentPin; currentPin = SHMPTR(currentPin->next_ptr)) {
+        processPin(currentPin);
+    }
+
+    // Обработка сигналов
+    hal_sig_t *currentSig;
+    for (currentSig = SHMPTR(hal_data->sig_list_ptr); currentSig; currentSig = SHMPTR(currentSig->next_ptr)) {
+        processSig(currentSig);
+    }
+
+    // Обработка параметров
+    hal_param_t *currentParam;
+    for (currentParam = SHMPTR(hal_data->param_list_ptr); currentParam; currentParam = SHMPTR(currentParam->next_ptr)) {
+        processParam(currentParam);
+    }
+    
+rtapi_mutex_give(&hal_data->mutex);
+    
+    
+    return UA_STATUSCODE_GOOD;
+}
+
+
+
+
+int main(int argc, char *argv[]) {
+    
+    signal(SIGINT, stopHandler);
+    signal(SIGTERM, stopHandler);
+
+
+    initialize_server();
+
+    hal_ready(comp_id);
+UA_Server_run(server, &running);
+    return EXIT_SUCCESS;
+}
+
+void cleanup() {
+    UA_Server_run_shutdown(server);
+    UA_Server_delete(server);
+    hal_exit(comp_id);
+}
