@@ -67,34 +67,57 @@ static UA_StatusCode
 writeDataSource(UA_Server *server,
                 const UA_NodeId *sessionId, void *sessionContext,
                 const UA_NodeId *nodeId, void *nodeContext,
-                const UA_NumericRange *range, const UA_DataValue *data) {
-    
-    DataSourceContext *dsContext = (DataSourceContext *)nodeContext;
-    void *valuePtr = dsContext->valuePtr;
+                const UA_NumericRange *range, const UA_DataValue *dataValue) {
 
-    switch (dsContext->type) { 
-    case HAL_FLOAT: {
-        hal_float_t *target = (hal_float_t *)valuePtr;
-        *target = *(double *)data->value.data;
-        break;
+
+
+    DataSourceContext *context = (DataSourceContext *)nodeContext;
+
+    if (context == NULL || dataValue->value.data == NULL) {
+        return UA_STATUSCODE_BADINTERNALERROR;
     }
-    case HAL_BIT: {
-        hal_bit_t *target = (hal_bit_t *)valuePtr;
-        *target = *(bool *)data->value.data;
-        break;
-    }
-    case HAL_U32: {
-        hal_u32_t *target = (hal_u32_t *)valuePtr;
-        *target = *(unsigned int *)data->value.data;
-        break;
-    }
-    case HAL_S32: {
-        hal_s32_t *target = (hal_s32_t *)valuePtr;
-        *target = *(int *)data->value.data;
-        break;
-    }
-    default:
-        return UA_STATUSCODE_BADUNEXPECTEDERROR;
+
+    
+    switch (context->type) {
+        case HAL_FLOAT: {
+            if (UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_DOUBLE])) {
+                *(hal_float_t *)context->valuePtr = *(double *)dataValue->value.data;
+            } else {
+                
+                return UA_STATUSCODE_BADTYPEMISMATCH;
+            }
+            break;
+        }
+        case HAL_BIT: {
+            if (UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_BOOLEAN])) {
+                *(hal_bit_t *)context->valuePtr = *(UA_Boolean *)dataValue->value.data;
+            } else {
+                
+                return UA_STATUSCODE_BADTYPEMISMATCH;
+            }
+            break;
+        }
+        case HAL_U32: {
+            if (UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_UINT32])) {
+                *(hal_u32_t *)context->valuePtr = *(UA_UInt32 *)dataValue->value.data;
+            } else {
+                
+                return UA_STATUSCODE_BADTYPEMISMATCH;
+            }
+            break;
+        }
+        case HAL_S32: {
+            if (UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_INT32])) {
+                *(hal_s32_t *)context->valuePtr = *(UA_Int32 *)dataValue->value.data;
+            } else {
+                
+                return UA_STATUSCODE_BADTYPEMISMATCH;
+            }
+            break;
+        }
+       
+        default:
+            return UA_STATUSCODE_BADINTERNALERROR;
     }
 
     return UA_STATUSCODE_GOOD;
@@ -109,7 +132,8 @@ UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t typ
     UA_VariableAttributes attr = UA_VariableAttributes_default;
     attr.description = UA_LOCALIZEDTEXT((char*)"en-US", (char*)variableName);
     attr.displayName = UA_LOCALIZEDTEXT((char*)"en-US", (char*)variableName);
-    
+    attr.accessLevel = UA_ACCESSLEVELMASK_READ | UA_ACCESSLEVELMASK_WRITE;
+
     UA_NodeId myVariableNodeId = UA_NODEID_STRING(1, (char*)variableName);
     UA_QualifiedName myVariableName = UA_QUALIFIEDNAME(1, (char*)variableName);
     UA_NodeId parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
