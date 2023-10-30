@@ -27,8 +27,7 @@ readDataSource(UA_Server *server,
                UA_Boolean sourceTimeStamp, const UA_NumericRange *range,
                UA_DataValue *dataValue) {
     
-    // Здесь вы можете установить актуальное значение для вашей переменной
-    // Например:
+
     DataSourceContext *context = (DataSourceContext *)nodeContext;
     
 
@@ -172,7 +171,7 @@ UA_StatusCode retVal = UA_Server_addDataSourceVariableNode(server, myVariableNod
 }
 
 UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t type, void *valuePtr) {
-    printf("Добавление переменной с источником данных на сервер: %s\n", variableName);
+    
     
     UA_VariableAttributes attr = UA_VariableAttributes_default;
     attr.description = UA_LOCALIZEDTEXT("en-US", (char*)variableName);
@@ -195,11 +194,7 @@ UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t typ
                                                                UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE), attr,
                                                                ds, dsContext, NULL);
     
-    if (retVal == UA_STATUSCODE_GOOD) {
-        printf("Переменная %s успешно добавлена на сервер.\n", variableName);
-    } else {
-        printf("Ошибка при добавлении переменной %s на сервер. Код ошибки: %d\n", variableName, retVal);
-    }
+
     
     return retVal;
 }
