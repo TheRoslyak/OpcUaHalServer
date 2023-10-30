@@ -29,17 +29,41 @@ readDataSource(UA_Server *server,
     
     // Здесь вы можете установить актуальное значение для вашей переменной
     // Например:
-    void *valuePtr = nodeContext; // Используем nodeContext как указатель на значение
-    double value = *(hal_float_t *)valuePtr;
+    DataSourceContext *context = (DataSourceContext *)nodeContext;
     
-    UA_Variant_setScalarCopy(&dataValue->value, &value, &UA_TYPES[UA_TYPES_DOUBLE]);
+
+    switch (context->type) {
+    case HAL_FLOAT: {
+        double value = *(hal_float_t *)context->valuePtr;
+        UA_Variant_setScalarCopy(&dataValue->value, &value, &UA_TYPES[UA_TYPES_DOUBLE]);
+        break;
+    }
+        case HAL_BIT: {
+        bool value = (bool)*(hal_bit_t *)context->valuePtr;
+        UA_Variant_setScalarCopy(&dataValue->value, &value, &UA_TYPES[UA_TYPES_BOOLEAN]);
+        break;
+    }
+        case HAL_U32: {
+        unsigned int value = *(hal_u32_t *)context->valuePtr;
+        UA_Variant_setScalarCopy(&dataValue->value, &value, &UA_TYPES[UA_TYPES_UINT32]);
+        break;
+    }
+        case HAL_S32: {
+        int value = *(hal_s32_t *)context->valuePtr;
+        UA_Variant_setScalarCopy(&dataValue->value, &value, &UA_TYPES[UA_TYPES_INT32]);
+        break;
+    }
+
+    default:
+        return UA_STATUSCODE_BADINTERNALERROR;
+    }
+
     dataValue->hasValue = true;
     
     return UA_STATUSCODE_GOOD;
 }
 
-// Если вы хотите разрешить запись в переменную, также определите функцию записи.
-// В противном случае оставьте NULL в конфигурации источника данных.
+
 static UA_StatusCode
 writeDataSource(UA_Server *server,
                 const UA_NodeId *sessionId, void *sessionContext,
@@ -162,11 +186,14 @@ UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t typ
     UA_DataSource ds;
     ds.read = readDataSource;
     ds.write = writeDataSource;// или ds.write = writeDataSource; если вы хотите разрешить запись
+    DataSourceContext *dsContext = new DataSourceContext;
+    dsContext->valuePtr = valuePtr;
+    dsContext->type = type;
     
     UA_StatusCode retVal = UA_Server_addDataSourceVariableNode(server, myVariableNodeId, parentNodeId,
                                                                parentReferenceNodeId, myVariableName,
                                                                UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE), attr,
-                                                               ds, valuePtr, NULL);
+                                                               ds, dsContext, NULL);
     
     if (retVal == UA_STATUSCODE_GOOD) {
         printf("Переменная %s успешно добавлена на сервер.\n", variableName);
@@ -208,10 +235,10 @@ UA_StatusCode initialize_server() {
         rtapi_print_msg(RTAPI_MSG_ERR, "OPCUA: Failed to create new server instance.");
         return UA_STATUSCODE_BADUNEXPECTEDERROR;
     }
-rtapi_mutex_get(&(hal_data->mutex));
+    rtapi_mutex_get(&(hal_data->mutex));
     // Add a sample variable
 
-hal_pin_t *currentPin;
+    hal_pin_t *currentPin;
     for (hal_pin_t *currentPin = SHMPTR(hal_data->pin_list_ptr); currentPin; currentPin = SHMPTR(currentPin->next_ptr)) {
         processPin(currentPin);
     }
@@ -228,8 +255,7 @@ hal_pin_t *currentPin;
         processParam(currentParam);
     }
     
-rtapi_mutex_give(&hal_data->mutex);
-    
+    rtapi_mutex_give(&hal_data->mutex);
     
     return UA_STATUSCODE_GOOD;
 }
@@ -246,7 +272,7 @@ int main(int argc, char *argv[]) {
     initialize_server();
 
     hal_ready(comp_id);
-UA_Server_run(server, &running);
+    UA_Server_run(server, &running);
     return EXIT_SUCCESS;
 }
 
