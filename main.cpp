@@ -72,7 +72,7 @@ writeDataSource(UA_Server *server,
     DataSourceContext *dsContext = (DataSourceContext *)nodeContext;
     void *valuePtr = dsContext->valuePtr;
 
-    switch (dsContext->type) { // предположим, что у вас есть глобальная переменная или аргумент 'type'
+    switch (dsContext->type) { 
     case HAL_FLOAT: {
         hal_float_t *target = (hal_float_t *)valuePtr;
         *target = *(double *)data->value.data;
@@ -99,83 +99,16 @@ writeDataSource(UA_Server *server,
 
     return UA_STATUSCODE_GOOD;
 }
-UA_StatusCode addVariableToOPCUA(const char *variableName, hal_type_t type, void *valuePtr) {
-    printf("Добавление переменной на сервер с именем: %s\n", variableName);
-
-    UA_VariableAttributes attr = UA_VariableAttributes_default;
-    UA_NodeId currentNodeId; // node id for the new variable
-    UA_NodeId dataType; // data type of the new variable
-    UA_Variant valueVariant;
-
-    switch (type) {
-    case HAL_FLOAT: {
-        double value = *(hal_float_t *)valuePtr;
-        printf("Выбран тип данных: HAL_FLOAT\n");
-        UA_Variant_setScalar(&valueVariant, &value, &UA_TYPES[UA_TYPES_DOUBLE]);
-        dataType = UA_TYPES[UA_TYPES_DOUBLE].typeId;
-        break;
-    }
-        case HAL_BIT: {
-        bool value = *(hal_bit_t *)valuePtr;
-        printf("Выбран тип данных: HAL_BIT\n");
-        UA_Variant_setScalar(&valueVariant, &value, &UA_TYPES[UA_TYPES_BOOLEAN]);
-        dataType = UA_TYPES[UA_TYPES_BOOLEAN].typeId;
-        break;
-        }
-    case HAL_U32:
-    {
-        unsigned int value = *(hal_u32_t *)valuePtr;
-        printf("Выбран тип данных: HAL_U32\n");
-        UA_Variant_setScalar(&valueVariant, &value, &UA_TYPES[UA_TYPES_UINT32]);
-        dataType = UA_TYPES[UA_TYPES_UINT32].typeId;
-        break;
-    }
-    case HAL_S32:
-    {   int value = *(hal_s32_t *)valuePtr;
-        printf("Выбран тип данных: HAL_S32\n");
-        UA_Variant_setScalar(&valueVariant, &value, &UA_TYPES[UA_TYPES_INT32]);
-        dataType = UA_TYPES[UA_TYPES_INT32].typeId;
-        break;
-        }
-    default:
-        printf("Неизвестный тип данных!\n");
-        return UA_STATUSCODE_BADUNEXPECTEDERROR;
-    }
-
-DataSourceContext *dsContext = (DataSourceContext *)UA_malloc(sizeof(DataSourceContext));
-dsContext->valuePtr = valuePtr;
-dsContext->type = type;
-UA_DataSource ds;
-ds.read = readDataSource;
-ds.write = writeDataSource;
-    attr.value = valueVariant;
-    attr.dataType = dataType;
-    attr.description = UA_LOCALIZEDTEXT("en-US", (char*)variableName);
-    attr.displayName = UA_LOCALIZEDTEXT("en-US", (char*)variableName);
-
-    UA_NodeId myVariableNodeId = UA_NODEID_STRING(1, (char*)variableName);
-    UA_QualifiedName myVariableName = UA_QUALIFIEDNAME(1, (char*)variableName);
-    UA_NodeId parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
-    UA_NodeId parentReferenceNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES);
-
-UA_StatusCode retVal = UA_Server_addDataSourceVariableNode(server, myVariableNodeId, parentNodeId, 
-    parentReferenceNodeId, myVariableName, UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE), 
-    attr, ds, dsContext, &currentNodeId);
-    if (retVal == UA_STATUSCODE_GOOD) {
-        printf("Переменная %s успешно добавлена на сервер.\n", variableName);
-    } else {
-        printf("Ошибка при добавлении переменной %s на сервер. Код ошибки: %d\n", variableName, retVal);
-    }
-
-    return retVal;
-}
 
 UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t type, void *valuePtr) {
     
-    
+    DataSourceContext *dsContext = new DataSourceContext;
+    dsContext->valuePtr = valuePtr;
+    dsContext->type = type;
+
     UA_VariableAttributes attr = UA_VariableAttributes_default;
-    attr.description = UA_LOCALIZEDTEXT("en-US", (char*)variableName);
-    attr.displayName = UA_LOCALIZEDTEXT("en-US", (char*)variableName);
+    attr.description = UA_LOCALIZEDTEXT((char*)"en-US", (char*)variableName);
+    attr.displayName = UA_LOCALIZEDTEXT((char*)"en-US", (char*)variableName);
     
     UA_NodeId myVariableNodeId = UA_NODEID_STRING(1, (char*)variableName);
     UA_QualifiedName myVariableName = UA_QUALIFIEDNAME(1, (char*)variableName);
@@ -184,43 +117,43 @@ UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t typ
     
     UA_DataSource ds;
     ds.read = readDataSource;
-    ds.write = writeDataSource;// или ds.write = writeDataSource; если вы хотите разрешить запись
-    DataSourceContext *dsContext = new DataSourceContext;
-    dsContext->valuePtr = valuePtr;
-    dsContext->type = type;
+    ds.write = writeDataSource;
+
     
     UA_StatusCode retVal = UA_Server_addDataSourceVariableNode(server, myVariableNodeId, parentNodeId,
                                                                parentReferenceNodeId, myVariableName,
                                                                UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE), attr,
                                                                ds, dsContext, NULL);
-    
-
-    
     return retVal;
 }
 void processPin(hal_pin_t *pin) {
-    void *valuePtr = &(pin->dummysig);
-    const char *name = (pin->name); 
-    hal_type_t type = pin->type; 
+    void *valuePtr = NULL;
+    if (pin->signal == 0) {   
+        valuePtr = &(pin->dummysig);
+    } else {
+        hal_sig_t *sig = SHMPTR(pin->signal);
+        valuePtr = SHMPTR(sig->data_ptr);
+    }
+    const char *name =  (pin->name); 
+    hal_type_t type  =   pin->type; 
     addVariableWithDataSource(name, type, valuePtr);
 }
 
 void processSig(hal_sig_t *sig) {
     void *data_ptr = SHMPTR(sig->data_ptr);
-    const char *name = sig->name;
-    hal_type_t type = sig->type;
+    const char *name =      sig->name;
+    hal_type_t type =       sig->type;
     addVariableWithDataSource(name, type, data_ptr);
 
 }
 void processParam(hal_param_t *param) {
     void *data_ptr = SHMPTR(param->data_ptr);
-    const char *name = param->name;
-    hal_type_t type = param->type;
+    const char *name =      param->name;
+    hal_type_t type =       param->type;
     addVariableWithDataSource(name, type, data_ptr);
 }
 
 UA_StatusCode initialize_server() {
-
 
     comp_id = hal_init("opcuaserver");
     if (comp_id < 0) return -1;
@@ -231,23 +164,28 @@ UA_StatusCode initialize_server() {
         return UA_STATUSCODE_BADUNEXPECTEDERROR;
     }
     rtapi_mutex_get(&(hal_data->mutex));
-    // Add a sample variable
+    
 
     hal_pin_t *currentPin;
-    for (hal_pin_t *currentPin = SHMPTR(hal_data->pin_list_ptr); currentPin; currentPin = SHMPTR(currentPin->next_ptr)) {
-        processPin(currentPin);
+          for (currentPin = SHMPTR(hal_data->pin_list_ptr); 
+               currentPin; 
+               currentPin = SHMPTR(currentPin->next_ptr)) {
+    processPin(currentPin);
     }
 
-    // Обработка сигналов
+    
     hal_sig_t *currentSig;
-    for (currentSig = SHMPTR(hal_data->sig_list_ptr); currentSig; currentSig = SHMPTR(currentSig->next_ptr)) {
-        processSig(currentSig);
+          for (currentSig = SHMPTR(hal_data->sig_list_ptr);
+               currentSig; currentSig = SHMPTR(currentSig->next_ptr)) {
+    processSig(currentSig);
     }
 
-    // Обработка параметров
+    
     hal_param_t *currentParam;
-    for (currentParam = SHMPTR(hal_data->param_list_ptr); currentParam; currentParam = SHMPTR(currentParam->next_ptr)) {
-        processParam(currentParam);
+            for (currentParam = SHMPTR(hal_data->param_list_ptr); 
+                 currentParam;
+                 currentParam = SHMPTR(currentParam->next_ptr)) {
+    processParam(currentParam);
     }
     
     rtapi_mutex_give(&hal_data->mutex);
