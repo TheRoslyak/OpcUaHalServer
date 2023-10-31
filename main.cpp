@@ -69,50 +69,27 @@ writeDataSource(UA_Server *server,
                 const UA_NodeId *nodeId, void *nodeContext,
                 const UA_NumericRange *range, const UA_DataValue *dataValue) {
 
-
-
     DataSourceContext *context = (DataSourceContext *)nodeContext;
-
-    if (context == NULL || dataValue->value.data == NULL) {
-        return UA_STATUSCODE_BADINTERNALERROR;
-    }
-
     
     switch (context->type) {
         case HAL_FLOAT: {
-            if (UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_DOUBLE])) {
-                *(hal_float_t *)context->valuePtr = *(double *)dataValue->value.data;
-            } else {
-                
-                return UA_STATUSCODE_BADTYPEMISMATCH;
-            }
+            UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_DOUBLE]);
+            *(hal_float_t *)context->valuePtr = *(double *)dataValue->value.data;
             break;
         }
         case HAL_BIT: {
-            if (UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_BOOLEAN])) {
-                *(hal_bit_t *)context->valuePtr = *(UA_Boolean *)dataValue->value.data;
-            } else {
-                
-                return UA_STATUSCODE_BADTYPEMISMATCH;
-            }
+            UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_BOOLEAN]);
+            *(hal_bit_t *)context->valuePtr = *(UA_Boolean *)dataValue->value.data;
             break;
         }
         case HAL_U32: {
-            if (UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_UINT32])) {
-                *(hal_u32_t *)context->valuePtr = *(UA_UInt32 *)dataValue->value.data;
-            } else {
-                
-                return UA_STATUSCODE_BADTYPEMISMATCH;
-            }
+            UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_UINT32]);
+            *(hal_u32_t *)context->valuePtr = *(UA_UInt32 *)dataValue->value.data;
             break;
         }
         case HAL_S32: {
-            if (UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_INT32])) {
-                *(hal_s32_t *)context->valuePtr = *(UA_Int32 *)dataValue->value.data;
-            } else {
-                
-                return UA_STATUSCODE_BADTYPEMISMATCH;
-            }
+            UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_INT32]);
+            *(hal_s32_t *)context->valuePtr = *(UA_Int32 *)dataValue->value.data;
             break;
         }
        
@@ -139,26 +116,21 @@ UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t typ
     UA_NodeId parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
     UA_NodeId parentReferenceNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES);
     
-    UA_DataSource ds;
-    ds.read = readDataSource;
-    ds.write = writeDataSource;
+    UA_DataSource dataSource;
+    dataSource.read = readDataSource;
+    dataSource.write = writeDataSource;
 
     
     UA_StatusCode retVal = UA_Server_addDataSourceVariableNode(server, myVariableNodeId, parentNodeId,
                                                                parentReferenceNodeId, myVariableName,
                                                                UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE), attr,
-                                                               ds, dsContext, NULL);
+                                                               dataSource, dsContext, NULL);
     return retVal;
 }
 void processPin(hal_pin_t *pin) {
-    void *valuePtr = NULL;
-    if (pin->signal == 0) {   
-        valuePtr = &(pin->dummysig);
-    } else {
-        hal_sig_t *sig = SHMPTR(pin->signal);
-        valuePtr = SHMPTR(sig->data_ptr);
-    }
-    const char *name =  (pin->name); 
+void *valuePtr = pin->signal ? static_cast<void*>(SHMPTR(SHMPTR(pin->signal)->data_ptr)) 
+                             : static_cast<void*>(&(pin->dummysig));
+    const char *name =   pin->name; 
     hal_type_t type  =   pin->type; 
     addVariableWithDataSource(name, type, valuePtr);
 }
@@ -179,8 +151,7 @@ void processParam(hal_param_t *param) {
 
 UA_StatusCode initialize_server() {
 
-    comp_id = hal_init("opcuaserver");
-    if (comp_id < 0) return -1;
+
     
     server = UA_Server_new();
     if (!server) {
@@ -221,7 +192,9 @@ UA_StatusCode initialize_server() {
 
 
 int main(int argc, char *argv[]) {
-    
+    comp_id = hal_init("opcuaserver");
+    if (comp_id < 0) return -1;
+
     signal(SIGINT, stopHandler);
     signal(SIGTERM, stopHandler);
 
