@@ -6,7 +6,7 @@ CFLAGS = -std=c++17 -Wall -fPIC -DULAPI
 
 # Paths to search for header files
 INCLUDES = -I/usr/include/linuxcnc \
-          -I/home/armada/Downloads/linuxcnc-dev/src/hal
+           -I/home/armada/Downloads/linuxcnc-dev/src/hal
 
            
 

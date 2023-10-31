@@ -1,13 +1,11 @@
-#include <open62541/server.h>
-#include <open62541/server_config_default.h>
-#include <open62541/plugin/log_stdout.h>
 #include "hal.h"
 #include "hal_priv.h"
 #include <rtapi_mutex.h>
-#include <signal.h>
-#include <stdio.h> 
+#include <open62541/server.h>
+#include <open62541/plugin/log_stdout.h>
+
 static int comp_id;
-static UA_Server *server = NULL;
+static UA_Server *server = UA_Server_new();
 typedef struct {
     void *valuePtr;
     hal_type_t type;
@@ -128,7 +126,6 @@ UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t typ
 
     UA_NodeId myVariableNodeId = UA_NODEID_STRING(1, (char*)variableName);
     UA_QualifiedName myVariableName = UA_QUALIFIEDNAME(1, (char*)variableName);
-    //UA_NodeId parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
     UA_NodeId parentReferenceNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES);
     
     UA_DataSource dataSource;
@@ -143,71 +140,6 @@ UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t typ
     return retVal;
 }
 
-
-void processPin(hal_pin_t *pin,UA_NodeId folder) {
-void *valuePtr = pin->signal ? static_cast<void*>(SHMPTR(SHMPTR(pin->signal)->data_ptr)) 
-                             : static_cast<void*>(&(pin->dummysig));
-    const char *name =   pin->name; 
-    hal_type_t type  =   pin->type; 
-    addVariableWithDataSource(name, type, valuePtr,folder);
-}
-
-void processSig(hal_sig_t *sig,UA_NodeId folder) {
-    void *data_ptr = SHMPTR(sig->data_ptr);
-    const char *name =      sig->name;
-    hal_type_t type =       sig->type;
-    addVariableWithDataSource(name, type, data_ptr,folder);
-
-}
-void processParam(hal_param_t *param,UA_NodeId folder) {
-    void *data_ptr = SHMPTR(param->data_ptr);
-    const char *name =      param->name;
-    hal_type_t type =       param->type;
-    addVariableWithDataSource(name, type, data_ptr,folder);
-}
-
-UA_StatusCode initialize_server() {
-
-
-    
-    server = UA_Server_new();
-    if (!server) {
-        rtapi_print_msg(RTAPI_MSG_ERR, "OPCUA: Failed to create new server instance.");
-        return UA_STATUSCODE_BADUNEXPECTEDERROR;
-    }
-    rtapi_mutex_get(&(hal_data->mutex));
-    
-    UA_NodeId pinsFolderId = createFolder("Pins");
-    hal_pin_t *currentPin;
-          for (currentPin = SHMPTR(hal_data->pin_list_ptr); 
-               currentPin; 
-               currentPin = SHMPTR(currentPin->next_ptr)) {
-    processPin(currentPin,pinsFolderId);
-    }
-
-    UA_NodeId signalsFolderId = createFolder("Signals");
-    hal_sig_t *currentSig;
-          for (currentSig = SHMPTR(hal_data->sig_list_ptr);
-               currentSig; currentSig = SHMPTR(currentSig->next_ptr)) {
-    processSig(currentSig,signalsFolderId);
-    }
-
-    UA_NodeId parametersFolderId = createFolder("Parameters");
-    hal_param_t *currentParam;
-            for (currentParam = SHMPTR(hal_data->param_list_ptr); 
-                 currentParam;
-                 currentParam = SHMPTR(currentParam->next_ptr)) {
-    processParam(currentParam,parametersFolderId);
-    }
-    
-    rtapi_mutex_give(&hal_data->mutex);
-    
-    return UA_STATUSCODE_GOOD;
-}
-
-
-
-
 int main(int argc, char *argv[]) {
     comp_id = hal_init("opcuaserver");
     if (comp_id < 0) return -1;
@@ -215,16 +147,50 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, stopHandler);
     signal(SIGTERM, stopHandler);
 
+    rtapi_mutex_get(&(hal_data->mutex));
+    
+    UA_NodeId pinsFolderId = createFolder("Pins");
+    hal_pin_t *currentPin;
+          for (currentPin = SHMPTR(hal_data->pin_list_ptr); 
+               currentPin; 
+               currentPin = SHMPTR(currentPin->next_ptr)) {
+        addVariableWithDataSource(currentPin->name,
+                                  currentPin->type, 
+                                  currentPin->signal ? static_cast<void*>(SHMPTR(SHMPTR(currentPin->signal)->data_ptr)) 
+                                                     : static_cast<void*>(&(currentPin->dummysig)),
+                                  pinsFolderId);
+    }
 
-    initialize_server();
+    UA_NodeId signalsFolderId = createFolder("Signals");
+    hal_sig_t *currentSig;
+          for (currentSig = SHMPTR(hal_data->sig_list_ptr);
+               currentSig; currentSig = SHMPTR(currentSig->next_ptr)) {
+    addVariableWithDataSource(currentSig->name, 
+                              currentSig->type, 
+                       SHMPTR(currentSig->data_ptr),
+                              signalsFolderId);
+    }
+
+    UA_NodeId parametersFolderId = createFolder("Parameters");
+    hal_param_t *currentParam;
+            for (currentParam = SHMPTR(hal_data->param_list_ptr); 
+                 currentParam;
+                 currentParam = SHMPTR(currentParam->next_ptr)) {
+     addVariableWithDataSource(currentParam->name,
+                               currentParam->type,
+                        SHMPTR(currentParam->data_ptr),
+                               parametersFolderId);
+    }
+    
+    rtapi_mutex_give(&hal_data->mutex);
 
     hal_ready(comp_id);
+    
     UA_Server_run(server, &running);
-    return EXIT_SUCCESS;
-}
-
-void cleanup() {
+    
+    hal_exit(comp_id);
     UA_Server_run_shutdown(server);
     UA_Server_delete(server);
-    hal_exit(comp_id);
+    
+    return EXIT_SUCCESS;
 }
