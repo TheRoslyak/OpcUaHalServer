@@ -8,11 +8,6 @@ CFLAGS = -std=c++17 -Wall -fPIC -DULAPI
 INCLUDES = -I/usr/include/linuxcnc \
            -I/home/armada/Downloads/linuxcnc-dev/src/hal
 
-           
-
-# Link flags
-LDFLAGS = 
-
 # Libraries for linking
 LIBS =  -llinuxcnchal -lopen62541
 
