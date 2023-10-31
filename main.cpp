@@ -160,7 +160,6 @@ UA_StatusCode initialize_server() {
     }
     rtapi_mutex_get(&(hal_data->mutex));
     
-
     hal_pin_t *currentPin;
           for (currentPin = SHMPTR(hal_data->pin_list_ptr); 
                currentPin; 
@@ -168,7 +167,6 @@ UA_StatusCode initialize_server() {
     processPin(currentPin);
     }
 
-    
     hal_sig_t *currentSig;
           for (currentSig = SHMPTR(hal_data->sig_list_ptr);
                currentSig; currentSig = SHMPTR(currentSig->next_ptr)) {
