@@ -13,6 +13,21 @@ typedef struct {
     hal_type_t type;
 } DataSourceContext;
 
+
+
+static UA_NodeId createFolder(const char *folderName) {
+    UA_NodeId folderId; 
+    UA_ObjectAttributes oAttr = UA_ObjectAttributes_default;
+    oAttr.displayName = UA_LOCALIZEDTEXT((char*)"en-US", (char*)folderName);
+    UA_Server_addObjectNode(server, UA_NODEID_NULL,
+                            UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER),
+                            UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES),
+                            UA_QUALIFIEDNAME(1, (char*)folderName),
+                            UA_NODEID_NUMERIC(0, UA_NS0ID_FOLDERTYPE),
+                            oAttr, NULL, &folderId);
+    return folderId;
+}
+
 UA_Boolean running = true;
 static void stopHandler(int sign) {
     UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "received ctrl-c");
@@ -100,7 +115,7 @@ writeDataSource(UA_Server *server,
     return UA_STATUSCODE_GOOD;
 }
 
-UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t type, void *valuePtr) {
+UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t type, void *valuePtr,UA_NodeId folder) {
     
     DataSourceContext *dsContext = new DataSourceContext;
     dsContext->valuePtr = valuePtr;
@@ -113,7 +128,7 @@ UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t typ
 
     UA_NodeId myVariableNodeId = UA_NODEID_STRING(1, (char*)variableName);
     UA_QualifiedName myVariableName = UA_QUALIFIEDNAME(1, (char*)variableName);
-    UA_NodeId parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
+    //UA_NodeId parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
     UA_NodeId parentReferenceNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES);
     
     UA_DataSource dataSource;
@@ -121,32 +136,34 @@ UA_StatusCode addVariableWithDataSource(const char *variableName, hal_type_t typ
     dataSource.write = writeDataSource;
 
     
-    UA_StatusCode retVal = UA_Server_addDataSourceVariableNode(server, myVariableNodeId, parentNodeId,
+    UA_StatusCode retVal = UA_Server_addDataSourceVariableNode(server, myVariableNodeId, folder,
                                                                parentReferenceNodeId, myVariableName,
                                                                UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE), attr,
                                                                dataSource, dsContext, NULL);
     return retVal;
 }
-void processPin(hal_pin_t *pin) {
+
+
+void processPin(hal_pin_t *pin,UA_NodeId folder) {
 void *valuePtr = pin->signal ? static_cast<void*>(SHMPTR(SHMPTR(pin->signal)->data_ptr)) 
                              : static_cast<void*>(&(pin->dummysig));
     const char *name =   pin->name; 
     hal_type_t type  =   pin->type; 
-    addVariableWithDataSource(name, type, valuePtr);
+    addVariableWithDataSource(name, type, valuePtr,folder);
 }
 
-void processSig(hal_sig_t *sig) {
+void processSig(hal_sig_t *sig,UA_NodeId folder) {
     void *data_ptr = SHMPTR(sig->data_ptr);
     const char *name =      sig->name;
     hal_type_t type =       sig->type;
-    addVariableWithDataSource(name, type, data_ptr);
+    addVariableWithDataSource(name, type, data_ptr,folder);
 
 }
-void processParam(hal_param_t *param) {
+void processParam(hal_param_t *param,UA_NodeId folder) {
     void *data_ptr = SHMPTR(param->data_ptr);
     const char *name =      param->name;
     hal_type_t type =       param->type;
-    addVariableWithDataSource(name, type, data_ptr);
+    addVariableWithDataSource(name, type, data_ptr,folder);
 }
 
 UA_StatusCode initialize_server() {
@@ -160,25 +177,27 @@ UA_StatusCode initialize_server() {
     }
     rtapi_mutex_get(&(hal_data->mutex));
     
+    UA_NodeId pinsFolderId = createFolder("Pins");
     hal_pin_t *currentPin;
           for (currentPin = SHMPTR(hal_data->pin_list_ptr); 
                currentPin; 
                currentPin = SHMPTR(currentPin->next_ptr)) {
-    processPin(currentPin);
+    processPin(currentPin,pinsFolderId);
     }
 
+    UA_NodeId signalsFolderId = createFolder("Signals");
     hal_sig_t *currentSig;
           for (currentSig = SHMPTR(hal_data->sig_list_ptr);
                currentSig; currentSig = SHMPTR(currentSig->next_ptr)) {
-    processSig(currentSig);
+    processSig(currentSig,signalsFolderId);
     }
 
-    
+    UA_NodeId parametersFolderId = createFolder("Parameters");
     hal_param_t *currentParam;
             for (currentParam = SHMPTR(hal_data->param_list_ptr); 
                  currentParam;
                  currentParam = SHMPTR(currentParam->next_ptr)) {
-    processParam(currentParam);
+    processParam(currentParam,parametersFolderId);
     }
     
     rtapi_mutex_give(&hal_data->mutex);
