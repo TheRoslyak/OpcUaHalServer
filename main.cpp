@@ -46,8 +46,8 @@ readDataSource(UA_Server *server,
 
     switch (context->type) {
     case HAL_FLOAT: {
-        double value = *(hal_float_t *)context->valuePtr;
-        UA_Variant_setScalarCopy(&dataValue->value, &value, &UA_TYPES[UA_TYPES_DOUBLE]);
+        float value = *(hal_float_t *)context->valuePtr;
+        UA_Variant_setScalarCopy(&dataValue->value, &value, &UA_TYPES[UA_TYPES_FLOAT]);
         break;
     }
         case HAL_BIT: {
@@ -86,8 +86,8 @@ writeDataSource(UA_Server *server,
     
     switch (context->type) {
         case HAL_FLOAT: {
-            UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_DOUBLE]);
-            *(hal_float_t *)context->valuePtr = *(double *)dataValue->value.data;
+            UA_Variant_hasScalarType(&dataValue->value, &UA_TYPES[UA_TYPES_FLOAT]);
+            *(hal_float_t *)context->valuePtr = *(float *)dataValue->value.data;
             break;
         }
         case HAL_BIT: {
@@ -185,7 +185,12 @@ int main(int argc, char *argv[]) {
     rtapi_mutex_give(&hal_data->mutex);
 
     hal_ready(comp_id);
-    
+    UA_ServerConfig *config = UA_Server_getConfig(server);
+config->publishingIntervalLimits.min = 1.0; // минимальный интервал в мс
+config->publishingIntervalLimits.max = 1.0; // максимальный интервал в мс
+config->samplingIntervalLimits.min = 1.0; // минимальный интервал опроса в мс
+config->samplingIntervalLimits.max = 1.0; // максимальный интервал опроса в мс
+
     UA_Server_run(server, &running);
     
     hal_exit(comp_id);
