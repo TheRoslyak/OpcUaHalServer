@@ -186,10 +186,10 @@ int main(int argc, char *argv[]) {
 
     hal_ready(comp_id);
     UA_ServerConfig *config = UA_Server_getConfig(server);
-config->publishingIntervalLimits.min = 1.0; // минимальный интервал в мс
-config->publishingIntervalLimits.max = 1.0; // максимальный интервал в мс
-config->samplingIntervalLimits.min = 1.0; // минимальный интервал опроса в мс
-config->samplingIntervalLimits.max = 1.0; // максимальный интервал опроса в мс
+config->publishingIntervalLimits.min = 1.0; // min publishing interval limits in ms
+config->publishingIntervalLimits.max = 1.0; // max publishing interval limits in ms
+config->samplingIntervalLimits.min = 1.0; // min sampling interval limits in ms
+config->samplingIntervalLimits.max = 1.0; // max sampling interval limits in ms
 
     UA_Server_run(server, &running);
     
